@@ -1,0 +1,500 @@
+clear;
+close all;
+% 获取图像，装入待处理彩色图像
+Scolor=imread('b.jpg');%使用imread函数读取图像文件
+Sgray=rgb2gray(Scolor);%使得rgb2gray将彩色图像转换成灰度图
+figure,imshow(Sgray),title('原始灰度图像');
+s=strel('disk',13);%构造结构用于开运算处理
+Bgray=imopen(Sgray,s);%对sgray s图像作开运算获得背景图像
+figure,imshow(Bgray);title('背景图像');%显示背景图像
+Egray=imsubtract(Sgray,Bgray);%原始灰度图减去背景图
+figure,imshow(Egray);title('增强黑白图像');%%%输出增强的黑白图像
+fmax1=double(max(max(Egray)));%获取egray的最大值并输出其双精度型
+fmin1=double(min(min(Egray)));%获取egray的最小值并输出其双精度型
+level=(fmax1-(fmax1-fmin1)/3)/255;%获得经验性最佳二值化阈值
+bw22=im2bw(Egray,0.3);%转换图像为二进制图像，二进制图像门限值选取很重要
+bw2=double(bw22);
+figure,imshow(bw2);title('图像二值化');%显示得到的二值图像
+grd=edge(bw2,'canny');%用canny算子识别二值图像中的边缘
+figure,imshow(grd);title('图像边缘提取');%输出识别获得的图像边缘
+bg1=imclose(grd,strel('rectangle',[5,19]));%取矩形框的闭运算
+figure,imshow(bg1);title('图像闭运算[5,19]');%输出闭运算的图像
+bg3=imopen(bg1,strel('rectangle',[5,19]));%取矩形框的开运算
+figure,imshow(bg3);title('图像开运算[5,19]');%输出开运算的图像
+ [L,num] = bwlabel(bg3,8);%标注二进制图像中已连接的部分
+Feastats = imfeature(L,'basic');%计算图像标记连通区域的特征尺寸
+Area=[Feastats.Area];%区域面积
+BoundingBox=[Feastats.BoundingBox];%[x y width height]车牌的框架大小
+RGB = label2rgb(L, 'spring', 'k', 'shuffle'); %标志图像向RGB图像转换
+figure,imshow(RGB);title('图像彩色标记');%输出连通区域的彩色图像
+%%%%%%%%%%%
+lx=0;
+for L=1:num
+width=BoundingBox((L-1)*4+3);
+hight=BoundingBox((L-1)*4+4);
+if(width>98&width<160&hight>25&hight<50)%框架的宽度和高度的范围
+lx=lx+1;
+Getok(lx)=L;
+end
+end
+%
+k=1；
+L=Getok(k);
+startcol=BoundingBox((L-1)*4+1)-2;%开始列
+startrow=BoundingBox((L-1)*4+2)-2;%开始行
+width=BoundingBox((L-1)*4+3)+8;%车牌宽
+hight=BoundingBox((L-1)*4+4)+2;%车牌高?????
+%%%%%%%%%%%%%%%%
+sbw1=bw2(startrow:startrow+hight,startcol:startcol+width-1);
+%获取车牌二值子图
+subcol1=Sgray(startrow:startrow+hight,startcol:startcol+width-1);%获取车牌灰度子图
+
+figure,subplot(2,1,1),imshow(subcol1);
+title('车牌灰度子图');%输出车牌的灰度图像?
+
+subplot(2,1,2),imshow(sbw1);
+title('车牌二值子图');%输出车牌的二值图
+
+histcol1=sum(sbw1);%计算车牌的垂直投影
+histrow=sum(sbw1');%计算车牌的水平投影
+figure,subplot(2,1,1),bar(histcol1);title('垂直投影（含边框）');%显示车牌的垂直投影图像
+subplot(2,1,2),bar(histrow);title('水平投影（含边框）');%显示车牌的水平投影图像
+[row,col]=size(subcol1);
+mxz=10;%门限值
+qzs=round(row/2);
+for i=1:qzs%求上界限
+if histrow(i)<mxz
+row1=i;
+break;
+else
+row1=1;
+end
+end
+for i=(qzs+1):col%求下界限
+if histrow(i)<mxz
+row2=i;
+break;
+else
+row2=col;
+end
+end
+qspqim=subcol1(row1:row2,:);%获取去水平框车牌
+figure,subplot(2,1,1),imshow(qspqim);title('去水平框车牌');
+qspqim1=sbw1(row1:row2,:);
+histcol2=sum(qspqim1);
+subplot(2,1,2),bar(histcol2);title('垂直投影（去边框）');
+
+
+histcol2;
+mxz1=1;%字符上升点，下降点门限值
+mxz2=8;%字符宽度门限值,要注意使七个字符全部进入，否则下面的循环会让后面进入麻烦
+i=1;
+j=1;
+col2=0;
+while i<8
+for k=(col2+1):col
+if histcol2(k)>mxz1
+col1=k;
+break;
+end
+end
+for k=col1:col
+if histcol2(k)<mxz1
+col2=k-1;
+break;
+end
+end
+width=col2-col1;
+if width>mxz2
+markcol(i)=col1;%字符上升沿标记
+markcol3(i)=col2;%字符下降沿标记
+i=i+1;
+end
+j=1+j;
+if j>10000
+disp('门限值有误');
+break;
+end
+end
+
+[n,n1]=size(markcol);
+for k=1:n1
+    markcol4(k)=markcol3(k)-markcol(k)+1; %字符宽度（上升点至下降点）
+    markcol5(k)=markcol3(k)-double(uint16(markcol4(k)/2));%字符中心位置
+end 
+markcol6=diff(markcol5); %字符中心距离（字符中心点至下一个字符中心点）
+maxs=max(markcol6); %查找最大值，即为第二字符与第三字符中心距离
+findmax=find(markcol6==maxs);
+markcol6(findmax)=0;
+maxwidth=max(markcol6);%查找最大字符宽度
+
+l=1;
+[m2,n2]=size(subcol1);
+figure;
+for k=1:7
+cleft=markcol5(k)-maxwidth/2;
+cright=markcol5(k)+maxwidth/2-2;
+if cleft<1
+cleft=1;
+cright=maxwidth;
+end
+if cright>n2
+cright=n2;
+cleft=n2-maxwidth;
+end
+SegGray=qspqim(:,cleft:cright);
+%%%SegBw1=sbw(rowtop:rowbot,cleft:cright);
+SegBw2 = imresize(SegGray,[22 14]); %变换为22行*14列标准子图      
+subplot(2,n1,l),imshow(SegGray);
+if l==7
+title(['车牌字符宽度： ',int2str(maxwidth)],'Color','r');
+end
+subplot(2,n1,n1+l),imshow(SegBw2);        
+fname=strcat('C:\Users\HUI\Desktop\Matlab6p5portable\work\a',int2str(k),'.jpg');%保存字符子图进入样本库
+imwrite(SegBw2,fname,'jpg') 
+l=l+1;
+end
+
+
+%%%%%%%模板前期处理程序
+function inpt = pretreatment(I)
+if isrgb(I)
+I1 = rgb2gray(I);
+else
+I1=I;
+end%%统一为灰度图
+I1=imresize(I1,[50 20]);%将图片统一成50*20大小
+I1=im2bw(I1,0.9);%统一为二值图
+[m,n]=size(I1);
+inpt=zeros(1,m*n);
+%%%%%%将图像按列转换成一个行向量
+for j=1:n
+for i=1:m
+inpt(1,m*(j-1)+i)=I1(i,j);
+end
+end
+
+
+
+
+%%%%%%%%%%%%%%%30数字样本，准确率50%到80%，若采样10样本，准确率20%到40%，
+%%%%%%%%%%%%%%32省自治区直辖市（含台湾），2特别区
+close all;
+clear all;
+%%%%归一化训练样本%%%%%%
+help minmax;
+help isrgb;%这两个HELP，是因为MATLAB问题而放的，本来正常的话不需要
+P=[];
+for k=0:29
+P=[P,(pretreatment(imread(num2str(k),'jpg')))'];%%%%%通过for k=0:29;对30个数字模板作处理
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%a=imread(num2str(k),'jpg');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%subplot(3,10,k+1),imshow(a);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%end已经证明可以得到30个样本
+end
+for k=123:197
+P=[P,(pretreatment(imread(num2str(k),'jpg')))'];%%%%%通过for k=123:197;对75个字母模板作处理
+end
+%后五位字符（可能为数字或字母）的BP网络别过程
+T=eye(105,105);
+%%bp神经网络参数设置
+net=newff(minmax(P),[1000,32,105],{'logsig','logsig','logsig'},'trainrp');
+net.inputWeights{1,1}.initFcn ='randnr';
+net.layerWeights{2,1}.initFcn ='randnr';
+net.trainparam.epochs=5000;
+net.trainparam.show=50;
+%net.trainparam.lr=0.003;
+net.trainparam.goal=0.0000000001;
+net=init(net);
+%%%训练样本%%%%
+[net,tr]=train(net,P,T);
+%%%%%%%%%%%测试字符%%%%
+PIN10=imread('b1.jpg');
+PIN11=imread('b2.jpg');
+PIN12=imread('b3.jpg');
+PIN13=imread('b4.jpg');
+PIN14=imread('b5.jpg');
+PIN15=imread('b6.jpg');
+PIN16=imread('b7.jpg');
+PIN0=pretreatment(PIN10);
+PIN1=pretreatment(PIN11);
+PIN2=pretreatment(PIN12);
+PIN3=pretreatment(PIN13);
+PIN4=pretreatment(PIN14);
+PIN5=pretreatment(PIN15);
+PIN6=pretreatment(PIN16);
+P0=[PIN0',PIN1',PIN2',PIN3',PIN4',PIN5',PIN6'];%%%%%%把各行向量转列，用于网络识别
+for i=3:7
+T0= sim(net ,P0(:,i));
+T1 = compet (T0) ;
+d =find(T1 == 1);
+if d<11
+d=d;
+elseif d<21
+d=d-10;
+elseif d<31
+d=d-20;
+elseif d<56
+d=d-20;
+elseif d<81
+d=d-45;
+elseif d<106
+d=d-70;
+end
+if d<11
+d=d-1;
+str=num2str(d);
+else
+switch d
+case 11
+str='A';
+case 12
+str='B';
+case 13
+str='C';
+case 14
+str='D';
+case 15
+str='E';
+case 16
+str='F';
+case 17
+str='G';
+case 18
+str='H';
+case 19
+str='J';
+case 20
+str='K';
+case 21
+str='L';
+case 22
+str='M';
+case 23
+str='N';
+case 24
+str='O';
+case 25
+str='P';
+case 26
+str='Q';
+case 27
+str='R';
+case 28
+str='S';
+case 29
+str='T';
+case 30
+str='U';
+case 31
+str='V';
+case 32
+str='W';
+case 33
+str='X';
+case 34
+str='Y';
+case 35
+str='Z';
+end
+end
+
+switch i
+case 3
+str2=str;
+case 4
+str3=str;
+case 5
+str4=str;
+case 6
+str5=str;
+otherwise
+str6=str;
+end
+end
+%%%%%汉字的BP网络识别过程
+P=[];
+for k=30:122
+P=[P,(pretreatment(imread(num2str(k),'jpg')))'];%对汉字模板作处理，93个模板按顺序输入到P
+end
+T=eye(93,93);
+%%bp神经网络参数设置
+net=newff(minmax(P),[1000,32,93],{'logsig','logsig','logsig'},'trainrp');
+net.inputWeights{1,1}.initFcn ='randnr';
+net.layerWeights{2,1}.initFcn ='randnr';
+net.trainparam.epochs=5000;
+net.trainparam.show=50;
+%net.trainparam.lr=0.003;
+net.trainparam.goal=0.0000000001;
+net=init(net);
+%%%训练样本%%%%
+[net,tr]=train(net,P,T);
+%%%%%%%测试%%%%%%%%%
+T0= sim(net ,P0(:,1));%%P0第一列为汉字数据
+T1 = compet (T0) ;
+d =find(T1 == 1);
+if d<32
+d=d;
+elseif d<63
+d=d-31;
+else
+d=d-62;
+end
+d=d-1;
+switch d
+case 0
+str0='京';
+case 1
+str0='津';
+case 2
+str0='沪';
+case 3
+str0='渝';
+case 4
+str0='蒙';
+case 5
+str0='新';
+case 6
+str0='藏';
+case 7
+str0='宁';
+case 8
+str0='桂';
+case 9
+str0='黑';
+case 10
+str0='吉';
+case 11
+str0='辽';
+case 12
+str0='晋';
+case 13
+str0='冀';
+case 14
+str0='青';
+case 15
+str0='鲁';
+case 16
+str0='豫';
+case 17
+str0='苏';
+case 18
+str0='皖';
+case 19
+str0='浙';
+case 20
+str0='闽';
+case 21
+str0='赣';
+case 22
+str0='湘';
+case 23
+str0='鄂';
+case 24
+str0='粤';
+case 25
+str0='琼';
+case 26
+str0='甘';
+case 27
+str0='陕';
+case 28
+str0='贵';
+case 29
+str0='云';
+case 30
+str0='川';
+end
+
+%%%第二位字符字母，BP识别过程
+P=[];
+for k=123:197
+P=[P,(pretreatment(imread(num2str(k),'jpg')))'];%对字母模板作处理，75个模板按顺序输入到P
+end
+T=eye(75,75);
+%%bp神经网络参数设置
+net=newff(minmax(P),[1000,32,75],{'logsig','logsig','logsig'},'trainrp');
+net.inputWeights{1,1}.initFcn ='randnr';
+net.layerWeights{2,1}.initFcn ='randnr';
+net.trainparam.epochs=5000;
+net.trainparam.show=50;
+%net.trainparam.lr=0.003;
+net.trainparam.goal=0.0000000001;
+net=init(net);
+%%%训练样本%%%%
+[net,tr]=train(net,P,T);
+%%%%%%%测试%%%%%%%%%
+T0= sim(net ,P0(:,2));%%P0第二列为车牌第二个字符
+T1 = compet (T0) ;
+d =find(T1 == 1);
+if d<26
+d=d;
+elseif d<51
+d=d-25;
+else
+d=d-50;
+end
+d=d-1;
+switch d
+case 0
+str1='A';
+case 1
+str1='B';
+case 2
+str1='C';
+case 3
+str1='D';
+case 4
+str1='E';
+case 5
+str1='F';
+case 6
+str1='G';
+case 7
+str1='H';
+case 8
+str1='J';
+case 9
+str1='K';
+case 10
+str1='L';
+case 11
+str1='M';
+case 12
+str1='N';
+case 13
+str1='O';
+case 14
+str1='P';
+case 15
+str1='Q';
+case 16
+str1='R';
+case 17
+str1='S';
+case 18
+str1='T';
+case 19
+str1='U';
+case 20
+str1='V';
+case 21
+str1='W';
+case 22
+str1='X';
+case 23
+str1='Y';
+case 24
+str1='Z';
+end
+%%%%%%显示定位后的分割出的车牌彩图，%%%
+%%%%%%识别结果以标题形式显示在图上%%%
+s=strcat(str0,str1,str2,str3,str4,str5,str6);
+figure;
+subplot(1,7,1),imshow(PIN10);
+subplot(1,7,2),imshow(PIN11);
+subplot(1,7,3),imshow(PIN12);
+subplot(1,7,4),imshow(PIN13);
+subplot(1,7,5),imshow(PIN14);
+subplot(1,7,6),imshow(PIN15);
+subplot(1,7,7),imshow(PIN16),title(s);
